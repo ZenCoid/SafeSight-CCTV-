@@ -1,14 +1,5 @@
-# SafeSight CCTV
-__pycache__/
-*.py[cod]
-*.egg-info/
-.env
-*.db
-violations/
-models/*.pt
-models/*.onnx
-.venv/
-venv/
-*.log
-.vscode/
-.idea/
+__pycache__ 
+*.pyc 
+models/ 
+snapshots/ 
+cameras.json 
