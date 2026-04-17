@@ -1,0 +1,144 @@
+/* SafeSight CCTV - Layouts */
+
+#app-root {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* ─── Sidebar ──────────────────────────────────────── */
+.sidebar {
+    width: 260px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--bg-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: var(--transition-smooth);
+    z-index: 10;
+}
+
+.sidebar.collapsed {
+    width: 80px;
+}
+
+.sidebar-header {
+    height: 70px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--bg-border);
+}
+
+.sidebar.collapsed .sidebar-header {
+    padding: 0;
+    justify-content: center;
+}
+
+.sidebar-header svg {
+    color: var(--color-teal);
+    flex-shrink: 0;
+}
+
+.sidebar-nav {
+    padding: 24px 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: var(--transition-fast);
+    font-weight: 500;
+}
+
+.sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 12px 0;
+}
+.sidebar.collapsed .nav-label {
+    display: none;
+}
+
+.nav-item:hover, .nav-item.active {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+.nav-item.active {
+    background: rgba(20, 184, 166, 0.1); /* teal tiny tint */
+    color: var(--color-teal);
+}
+
+/* ─── Main Content Area ────────────────────────────── */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    background-image: 
+        radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.03) 0%, transparent 40%),
+        radial-gradient(circle at 0% 100%, rgba(59, 130, 246, 0.03) 0%, transparent 40%);
+}
+
+.top-bar {
+    height: 70px;
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--bg-border);
+    backdrop-filter: blur(10px);
+    z-index: 5;
+}
+
+.top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.view-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+}
+
+/* ─── Bento Grid (Dashboard) ───────────────────────── */
+.bento-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 16px;
+    height: calc(100vh - 120px - 48px); /* minus top-bar, minus top-stats, minus padding */
+    min-height: 400px;
+}
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 1024px) {
+    .bento-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .sidebar { width: 60px; }
+    .sidebar .nav-label { display: none; }
+    .sidebar .sidebar-header span { display: none; }
+    .bento-grid { grid-template-columns: 1fr; height: auto; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .top-bar, .view-container { padding: 16px; }
+}
