@@ -3,3 +3,5 @@ __pycache__
 models/ 
 snapshots/ 
 cameras.json 
+.env 
+violations.db 
