@@ -9,7 +9,6 @@ export const state = {
     stats: {},
     violations: [],
     listeners: new Set(),
-    fullscreenCamId: null
 };
 
 export function subscribe(fn) {
@@ -89,13 +88,37 @@ export async function reconnectCamera(camId) {
     }
 }
 
+// ─── WebSocket (fixed: no interval leak on reconnect) ──────────
+let wsInstance = null;
+let wsPingInterval = null;
+
 function setupWebSocket() {
+    // Clean up previous WebSocket and its ping interval
+    if (wsPingInterval) {
+        clearInterval(wsPingInterval);
+        wsPingInterval = null;
+    }
+    if (wsInstance) {
+        try { wsInstance.close(); } catch {}
+        wsInstance = null;
+    }
+
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${location.host}/ws/alerts`;
 
     try {
         const ws = new WebSocket(url);
-        ws.onopen = () => {};
+        wsInstance = ws;
+
+        ws.onopen = () => {
+            // Start ping — store reference so we can clear it on reconnect
+            wsPingInterval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send('ping');
+                }
+            }, 30000);
+        };
+
         ws.onmessage = (e) => {
             const data = JSON.parse(e.data);
             if (data.type !== 'pong') {
@@ -105,11 +128,17 @@ function setupWebSocket() {
                 fetchViolations();
             }
         };
-        ws.onclose = () => setTimeout(setupWebSocket, 5000);
+
+        ws.onclose = () => {
+            // Clear ping, then reconnect after delay
+            if (wsPingInterval) {
+                clearInterval(wsPingInterval);
+                wsPingInterval = null;
+            }
+            setTimeout(setupWebSocket, 5000);
+        };
+
         ws.onerror = () => {};
-        setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-        }, 30000);
     } catch (e) {
         setTimeout(setupWebSocket, 5000);
     }

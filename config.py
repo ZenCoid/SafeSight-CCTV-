@@ -49,12 +49,12 @@ class Config:
     # Model
     MODEL_PATH = os.getenv("MODEL_PATH", "models/best.pt")
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.45"))
-    DETECTION_INTERVAL = int(os.getenv("DETECTION_INTERVAL", "3"))
+    DETECTION_INTERVAL = int(os.getenv("DETECTION_INTERVAL", "1"))
 
-    # Streaming
+    # Streaming — single camera view means we can afford high quality
     STREAM_FPS = int(os.getenv("STREAM_FPS", "25"))
-    JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "45"))
-    JPEG_QUALITY_HD = int(os.getenv("JPEG_QUALITY_HD", "80"))
+    JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "80"))
+    JPEG_QUALITY_HD = int(os.getenv("JPEG_QUALITY_HD", "90"))
 
     # Server
     SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
@@ -68,9 +68,7 @@ class Config:
     SNAPSHOT_QUALITY = 90
 
     # Violation Buffer — prevents false positives and spam
-    # How many consecutive "no helmet" frames before logging a violation
     VIOLATION_THRESHOLD = int(os.getenv("VIOLATION_THRESHOLD", "5"))
-    # Seconds to wait before logging another violation on the same camera
     VIOLATION_COOLDOWN = int(os.getenv("VIOLATION_COOLDOWN", "30"))
 
     # Cameras (loaded from cameras.json)

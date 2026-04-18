@@ -1,4 +1,4 @@
-import { fetchViolations, state, formatTime } from '../api.js';
+import { fetchViolations, state, formatTime, subscribe } from '../api.js';
 
 export default function render(container) {
     container.innerHTML = `
@@ -58,8 +58,8 @@ export default function render(container) {
                     </td>
                     <td>
                         ${v.snapshot_url 
-                            ? `<a href="${v.snapshot_url}" target="_blank" class="btn style="padding:4px 8px">View Image</a>` 
-                            : `<span class="text-small">No image</span>`}
+                            ? '<a href="' + v.snapshot_url + '" target="_blank" class="btn" style="padding:4px 8px;font-size:11px">View Image</a>' 
+                            : '<span class="text-small">No image</span>'}
                     </td>
                 </tr>
             `;
@@ -71,9 +71,9 @@ export default function render(container) {
         fetchViolations().then(redraw);
     };
 
-    // initial fetch
+    // Initial fetch
     fetchViolations().then(redraw);
 
-    // we don't need a heavy subscriber here, just redraw on mount
-    return () => {}; 
+    // Subscribe so table updates when new violations come in via WebSocket
+    return subscribe(redraw);
 }

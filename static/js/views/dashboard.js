@@ -1,7 +1,9 @@
 import { state, subscribe } from '../api.js';
-import { openFullscreen } from '../app.js';
 
 export default function render(container) {
+    const firstCam = state.cameras[0];
+    let activeCamId = firstCam ? firstCam.id : null;
+
     container.innerHTML = `
         <div class="stats-row">
             <div class="glass-panel stat-box">
@@ -42,35 +44,81 @@ export default function render(container) {
             </div>
         </div>
 
-        <div class="bento-grid" id="dash-grid"></div>
-    `;
+        <div class="camera-selector" id="camera-selector">
+            ${state.cameras.map(cam => `
+                <button class="cam-btn ${cam.id === activeCamId ? 'active' : ''}" data-cam="${cam.id}">
+                    <span class="status-dot live" id="sel-dot-${cam.id}"></span>
+                    ${cam.name}
+                    <span class="cam-btn-fps" id="sel-fps-${cam.id}">--</span>
+                </button>
+            `).join('')}
+        </div>
 
-    const grid = document.getElementById('dash-grid');
-
-    // Create cards once
-    state.cameras.forEach(cam => {
-        const div = document.createElement('div');
-        div.className = 'camera-card';
-        div.id = `card-${cam.id}`;
-        div.innerHTML = `
-            <img src="/stream/${cam.id}" alt="Stream" class="camera-feed" onerror="this.style.opacity='0'" onload="this.style.opacity='0.85'">
-            <div class="camera-overlay">
-                <div class="camera-header">
-                    <span class="camera-name">${cam.name}</span>
-                    <span class="status-dot live" id="dot-${cam.id}"></span>
-                </div>
-                <div class="camera-footer">
-                    <span class="camera-tag" id="fps-${cam.id}">-- FPS</span>
-                    <span class="camera-tag" style="background:var(--color-blue-glow);color:#fff">AI ON</span>
+        <div class="single-view" id="single-view">
+            <div class="feed-container" id="feed-container">
+                <img id="main-feed" src="${activeCamId ? `/stream/${activeCamId}` : ''}" class="feed-img">
+                <div class="feed-controls" id="feed-controls">
+                    <div class="feed-info">
+                        <span class="status-dot live"></span>
+                        <span class="feed-name" id="feed-name">${firstCam?.name || 'Select Camera'}</span>
+                        <span class="camera-tag" id="feed-fps">-- FPS</span>
+                        <span class="camera-tag" style="background:var(--color-blue-glow);color:#fff">AI ON</span>
+                    </div>
+                    <button class="btn btn-primary" id="fs-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                        Fullscreen
+                    </button>
                 </div>
             </div>
-        `;
-        div.onclick = () => openFullscreen(cam.id);
-        grid.appendChild(div);
+        </div>
+    `;
+
+    // ─── Camera Switching ──────────────────────────
+    function switchCamera(camId) {
+        if (camId === activeCamId) return;
+        activeCamId = camId;
+
+        // Update buttons
+        container.querySelectorAll('.cam-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cam === camId);
+        });
+
+        // Destroy old img, create new one (MJPEG can't switch src on active stream)
+        const feedContainer = document.getElementById('feed-container');
+        const oldImg = document.getElementById('main-feed');
+        if (oldImg) oldImg.remove();
+
+        const newImg = document.createElement('img');
+        newImg.id = 'main-feed';
+        newImg.className = 'feed-img';
+        newImg.src = `/stream/${camId}`;
+        newImg.onerror = () => { newImg.style.opacity = '0'; };
+        newImg.onload = () => { newImg.style.opacity = '1'; };
+        feedContainer.insertBefore(newImg, feedContainer.firstChild);
+
+        // Update info
+        const cam = state.cameras.find(c => c.id === camId);
+        document.getElementById('feed-name').textContent = cam?.name || camId;
+    }
+
+    container.querySelectorAll('.cam-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchCamera(btn.dataset.cam));
     });
 
+    // ─── Fullscreen (Browser Fullscreen API) ───────
+    document.getElementById('fs-btn').addEventListener('click', () => {
+        const el = document.getElementById('feed-container');
+        if (el.requestFullscreen) {
+            el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        } else if (el.msRequestFullscreen) {
+            el.msRequestFullscreen();
+        }
+    });
+
+    // ─── Stats Update ──────────────────────────────
     const updateView = (currentState) => {
-        // Update stats
         if (currentState.stats) {
             document.getElementById('dash-stat-online').textContent = `${currentState.stats.cameras_online || 0} / ${currentState.cameras.length}`;
             if (currentState.stats.detection) {
@@ -82,26 +130,26 @@ export default function render(container) {
             }
         }
 
-        // Update grid
+        // Update selector bar dots and FPS
         if (currentState.status && currentState.status.cameras) {
             currentState.cameras.forEach(cam => {
                 const s = currentState.status.cameras[cam.id];
                 if (!s) return;
-                const dot = document.getElementById(`dot-${cam.id}`);
-                const fps = document.getElementById(`fps-${cam.id}`);
-                const card = document.getElementById(`card-${cam.id}`);
-                
+                const dot = document.getElementById(`sel-dot-${cam.id}`);
+                const fps = document.getElementById(`sel-fps-${cam.id}`);
                 if (dot) {
                     dot.className = `status-dot ${s.connected ? 'live' : 'offline'}`;
                 }
                 if (fps) {
-                    fps.textContent = s.connected ? `${s.fps} FPS` : 'OFFLINE';
-                }
-                if (card) {
-                    // Just a mock way to show alert on card
-                    // You'd ideally know which camera threw the violation
+                    fps.textContent = s.connected ? `${s.fps}` : 'OFF';
                 }
             });
+
+            // Update feed FPS for active camera
+            const activeStatus = currentState.status.cameras[activeCamId];
+            if (activeStatus) {
+                document.getElementById('feed-fps').textContent = activeStatus.connected ? `${activeStatus.fps} FPS` : 'OFFLINE';
+            }
         }
     };
 

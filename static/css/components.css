@@ -36,7 +36,7 @@
     height: 36px;
 }
 
-/* ─── Camera Card (Bento Item) ────────────────────── */
+/* ─── Camera Card ─────────────────────────────────── */
 .camera-card {
     position: relative;
     border-radius: var(--radius-md);
@@ -113,51 +113,7 @@
     border: 1px solid rgba(255,255,255,0.1);
 }
 
-/* ─── Fullscreen Overlay ───────────────────────────── */
-.fullscreen-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.95);
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-smooth);
-}
-
-.fullscreen-overlay.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.fs-header {
-    height: 60px;
-    padding: 0 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    z-index: 10;
-}
-
-.fs-video-container {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 0;
-}
-
-.fs-video-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-
-/* ─── Stats Card ────────────────────────────────────── */
+/* ─── Stats Card ───────────────────────────────────── */
 .stat-box {
     padding: 16px;
     display: flex;
@@ -210,7 +166,7 @@
 }
 
 .toast {
-    background: rgba(20, 26, 40, 0.85); /* Slightly darker */
+    background: rgba(20, 26, 40, 0.85);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--bg-border);

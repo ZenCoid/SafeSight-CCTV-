@@ -1,12 +1,11 @@
 """
 SafeSight CCTV - Multi-Camera Main Application
 FastAPI server with support for multiple cameras via NVR/DVR channels.
-Supports both sub-stream (grid) and main-stream (fullscreen) viewing.
+Single-camera view with browser Fullscreen API for big screen.
 """
 import os
 import time
 import cv2
-import json
 import numpy as np
 import uvicorn
 from datetime import datetime
@@ -14,7 +13,7 @@ from pathlib import Path
 from urllib.parse import quote
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,7 +22,7 @@ from camera import ThreadedCamera
 from detector import YOLODetector
 from database import ViolationDB
 
-# Force TCP for RTSP
+# Force TCP for RTSP — MUST be before any cv2.VideoCapture()
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
 
@@ -34,7 +33,7 @@ async def lifespan(app: FastAPI):
     global detector, database
 
     print("\n" + "=" * 55)
-    print("   SafeSight CCTV - Multi-Camera System v2.1")
+    print("   SafeSight CCTV - Multi-Camera System v3.0")
     print("=" * 55)
 
     os.makedirs(Config.SNAPSHOT_DIR, exist_ok=True)
@@ -43,7 +42,8 @@ async def lifespan(app: FastAPI):
     if not cam_list:
         print("[WARNING] No cameras found in cameras.json!")
 
-    # Start sub-stream cameras (for grid view, lower quality)
+    # Start all camera grabber threads (background RTSP connections)
+    # Only ONE MJPEG stream is served at a time to the browser
     for cam_conf in cam_list:
         camera_configs[cam_conf.id] = cam_conf
         rtsp_url = build_rtsp_url(cam_conf, subtype=1)
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
         else:
             print(f"  [--] {cam_conf.name} (sub) - Failed (will auto-retry)")
 
-    print("  [..] Fullscreen: uses sub-stream at higher quality")
+    print("  [..] View: Single camera selector + Browser Fullscreen API")
 
     det = get_detector()
     if not det.load_model():
@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
 
     print("=" * 55)
     print(f"   Dashboard: http://localhost:{Config.SERVER_PORT}")
-    print(f"   Cameras: {len(cameras)} | Grid: /stream/<id> | Full: /fullscreen/<id>")
+    print(f"   Cameras: {len(cameras)} | Stream: /stream/<id>")
     print("=" * 55 + "\n")
 
     yield
@@ -78,15 +78,13 @@ async def lifespan(app: FastAPI):
     print("[Shutdown] Cleaning up...")
     for cam in cameras.values():
         cam.stop()
-    for cam in hd_cameras.values():
-        cam.stop()
     if database:
         database.close()
 
 
 # ─── App Setup ──────────────────────────────────────────────────
 
-app = FastAPI(title="SafeSight CCTV", version="2.1.0", lifespan=lifespan)
+app = FastAPI(title="SafeSight CCTV", version="3.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,14 +100,10 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # ─── Global Instances ──────────────────────────────────────────
 
 cameras: dict[str, ThreadedCamera] = {}
-hd_cameras: dict[str, ThreadedCamera] = {}
 detector: YOLODetector = None
 database: ViolationDB = None
 camera_configs: dict[str, CameraConfig] = {}
 detection_enabled: dict[str, bool] = {}
-
-# Track which camera is currently in fullscreen mode
-fullscreen_camera: str | None = None
 
 
 def get_detector() -> YOLODetector:
@@ -171,7 +165,7 @@ async def camera_list():
 
 @app.get("/stream/{camera_id}")
 async def video_stream(camera_id: str):
-    """MJPEG video stream - sub stream (for grid view, lower quality)."""
+    """MJPEG video stream — serves ONE camera at a time."""
     cam = cameras.get(camera_id)
     if not cam:
         return {"error": f"Camera '{camera_id}' not found"}
@@ -192,7 +186,7 @@ async def video_stream(camera_id: str):
                 continue
 
             if detection_enabled.get(camera_id, True):
-                annotated, detections = det.detect(camera_id, frame)
+                annotated, _ = det.detect(camera_id, frame)
             else:
                 annotated = frame
 
@@ -212,143 +206,13 @@ async def video_stream(camera_id: str):
     )
 
 
-@app.get("/fullscreen/{camera_id}")
-async def fullscreen_stream(camera_id: str):
-    """MJPEG fullscreen view - uses same sub-stream camera but higher JPEG quality.
-    Loads INSTANTLY because the sub-stream is already connected."""
-    global fullscreen_camera
-
-    cam = cameras.get(camera_id)
-    if not cam:
-        return {"error": f"Camera '{camera_id}' not found"}
-
-    fullscreen_camera = camera_id
-    det = get_detector()
-    interval = 1.0 / Config.STREAM_FPS
-
-    def generate():
-        while True:
-            frame_start = time.time()
-
-            frame = cam.get_frame()
-            if frame is None:
-                no_sig = create_no_signal_frame(camera_id)
-                _, jpeg = cv2.imencode(".jpg", no_sig, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
-                time.sleep(0.5)
-                continue
-
-            if detection_enabled.get(camera_id, True):
-                annotated, detections = det.detect(camera_id, frame)
-            else:
-                annotated = frame
-
-            # Higher quality for fullscreen view
-            _, jpeg = cv2.imencode(".jpg", annotated, [
-                cv2.IMWRITE_JPEG_QUALITY, Config.JPEG_QUALITY_HD
-            ])
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
-
-            elapsed = time.time() - frame_start
-            sleep_time = interval - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-
-    return StreamingResponse(
-        generate(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-    )
-
-
-@app.post("/api/fullscreen/start/{camera_id}")
-async def start_fullscreen(camera_id: str):
-    """Mark a camera as being viewed in fullscreen (for stats)."""
-    global fullscreen_camera
-    fullscreen_camera = camera_id
-    return {"ok": True, "camera_id": camera_id}
-
-
-@app.post("/api/fullscreen/stop")
-async def stop_fullscreen():
-    """Clear fullscreen state."""
-    global fullscreen_camera
-    fullscreen_camera = None
-    return {"ok": True}
-
-
-# Keep HD endpoints for future use when NVR is upgraded
-@app.post("/api/hd/start/{camera_id}")
-async def start_hd(camera_id: str):
-    cam_conf = camera_configs.get(camera_id)
-    if not cam_conf:
-        return {"error": "Camera not found"}
-    if camera_id in hd_cameras and hd_cameras[camera_id].connected:
-        return {"started": True, "already_connected": True}
-    if camera_id in hd_cameras:
-        hd_cameras[camera_id].stop()
-        del hd_cameras[camera_id]
-    hd_url = build_rtsp_url(cam_conf, subtype=0)
-    hd_cam = ThreadedCamera(
-        camera_id=f"{camera_id}_hd",
-        camera_name=f"{cam_conf.name} (HD)",
-        rtsp_url=hd_url,
-    )
-    hd_cameras[camera_id] = hd_cam
-    hd_cam.start_async()
-    return {"started": True, "already_connected": False}
-
-
-@app.get("/hd/{camera_id}")
-async def hd_stream(camera_id: str):
-    if camera_id not in hd_cameras:
-        return {"error": "HD stream not started. Call /api/hd/start first."}
-    hd_cam = hd_cameras[camera_id]
-    det = get_detector()
-    interval = 1.0 / Config.STREAM_FPS
-
-    def generate():
-        while True:
-            frame_start = time.time()
-            frame = hd_cam.get_frame()
-            if frame is None:
-                no_sig = create_no_signal_frame(f"{camera_id} HD")
-                _, jpeg = cv2.imencode(".jpg", no_sig, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
-                time.sleep(0.5)
-                continue
-            if detection_enabled.get(camera_id, True):
-                annotated, detections = det.detect(camera_id, frame)
-            else:
-                annotated = frame
-            _, jpeg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
-            elapsed = time.time() - frame_start
-            sleep_time = interval - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
-
-
-@app.post("/api/hd/stop/{camera_id}")
-async def stop_hd_stream(camera_id: str):
-    hd_cam = hd_cameras.get(camera_id)
-    if hd_cam:
-        hd_cam.stop()
-        del hd_cameras[camera_id]
-        return {"stopped": True}
-    return {"stopped": False}
-
-
 @app.get("/api/status")
 async def get_status():
     det = get_detector()
     return {
         "cameras": {cid: cam.get_status() for cid, cam in cameras.items()},
-        "hd_cameras": {cid: cam.get_status() for cid, cam in hd_cameras.items()},
         "detector": det.get_stats(),
         "detection_enabled": detection_enabled,
-        "fullscreen_camera": fullscreen_camera,
         "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
