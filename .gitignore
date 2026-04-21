@@ -5,3 +5,4 @@ snapshots/
 cameras.json 
 .env 
 violations.db 
+!models/best.pt 
