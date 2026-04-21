@@ -1,6 +1,7 @@
 """
 SafeSight CCTV - Threaded RTSP Camera Grabber
 Continuously grabs frames from an IP camera in a background thread.
+Enhanced with auto-upscaling for small CCTV sub-streams.
 """
 import os
 import cv2
@@ -8,6 +9,8 @@ import time
 import threading
 import numpy as np
 from queue import Queue
+
+from config import Config
 
 # MUST be set BEFORE any cv2.VideoCapture() call
 # Forces TCP instead of UDP — TCP guarantees frame delivery, UDP drops packets
@@ -135,11 +138,37 @@ class ThreadedCamera:
         else:
             self._grab_loop()
 
+    def _upscale_frame(self, frame):
+        """Upscale small CCTV frames for better detection accuracy.
+        Small frames (e.g. 352x288 from sub-stream) make helmets appear
+        as tiny 10-15 pixel objects that YOLO can't detect reliably.
+        Upscaling to at least MIN_FRAME_DIMENSION helps significantly."""
+        h, w = frame.shape[:2]
+        min_dim = Config.MIN_FRAME_DIMENSION
+
+        # Skip upscaling if frame is already large enough
+        if w >= min_dim and h >= min_dim:
+            return frame
+
+        scale = min_dim / min(w, h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        # INTER_LANCZOS4 gives the best quality for upscaling
+        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+
     def get_frame(self) -> np.ndarray | None:
-        """Get the latest frame. Non-blocking."""
+        """Get the latest frame. Non-blocking.
+        Automatically upscales small frames if FRAME_UPSCALE is enabled."""
         with self.lock:
             if self.latest_frame is not None:
-                return self.latest_frame.copy()
+                frame = self.latest_frame.copy()
+
+                # Auto-upscale small CCTV frames for better detection
+                if Config.FRAME_UPSCALE:
+                    frame = self._upscale_frame(frame)
+
+                return frame
         return None
 
     def get_status(self) -> dict:

@@ -51,7 +51,21 @@ class Config:
     CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.45"))
     DETECTION_INTERVAL = int(os.getenv("DETECTION_INTERVAL", "1"))
 
-    # Streaming — single camera view means we can afford high quality
+    # YOLO Detection — CCTV optimized
+    YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1280"))
+    YOLO_AUGMENT = os.getenv("YOLO_AUGMENT", "true").lower() == "true"
+    YOLO_IOU = float(os.getenv("YOLO_IOU", "0.3"))
+
+    # Frame Preprocessing
+    CLAHE_ENABLED = os.getenv("CLAHE_ENABLED", "true").lower() == "true"
+    FRAME_UPSCALE = os.getenv("FRAME_UPSCALE", "true").lower() == "true"
+    MIN_FRAME_DIMENSION = int(os.getenv("MIN_FRAME_DIMENSION", "720"))
+
+    # Temporal Smoothing
+    SMOOTHING_BUFFER_SIZE = int(os.getenv("SMOOTHING_BUFFER_SIZE", "5"))
+    SMOOTHING_MIN_HITS = int(os.getenv("SMOOTHING_MIN_HITS", "2"))
+
+    # Streaming
     STREAM_FPS = int(os.getenv("STREAM_FPS", "25"))
     JPEG_QUALITY = int(os.getenv("JPEG_QUALITY", "80"))
     JPEG_QUALITY_HD = int(os.getenv("JPEG_QUALITY_HD", "90"))
@@ -59,6 +73,9 @@ class Config:
     # Server
     SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT = int(os.getenv("SERVER_PORT", "8000"))
+
+    # RTSP
+    RTSP_SUBTYPE = int(os.getenv("RTSP_SUBTYPE", "0"))
 
     # Database
     DB_PATH = "violations.db"

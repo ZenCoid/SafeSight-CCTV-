@@ -3,6 +3,7 @@ import { state, subscribe } from '../api.js';
 export default function render(container) {
     const firstCam = state.cameras[0];
     let activeCamId = firstCam ? firstCam.id : null;
+    let isWebcam = !firstCam; // default to webcam if no CCTV cameras
 
     container.innerHTML = `
         <div class="stats-row">
@@ -46,23 +47,34 @@ export default function render(container) {
 
         <div class="camera-selector" id="camera-selector">
             ${state.cameras.map(cam => `
-                <button class="cam-btn ${cam.id === activeCamId ? 'active' : ''}" data-cam="${cam.id}">
+                <button class="cam-btn ${cam.id === activeCamId && !isWebcam ? 'active' : ''}" data-cam="${cam.id}">
                     <span class="status-dot live" id="sel-dot-${cam.id}"></span>
                     ${cam.name}
                     <span class="cam-btn-fps" id="sel-fps-${cam.id}">--</span>
                 </button>
             `).join('')}
+            <div style="width:1px;height:28px;background:var(--bg-border);margin:0 4px;flex-shrink:0"></div>
+            <button class="cam-btn ${isWebcam ? 'active' : ''}" id="webcam-btn" style="${isWebcam ? 'background:rgba(168,85,247,0.15);color:#a855f7;border-color:#a855f7;' : ''}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#a855f7;flex-shrink:0"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                Webcam
+            </button>
         </div>
 
         <div class="single-view" id="single-view">
             <div class="feed-container" id="feed-container">
-                <img id="main-feed" src="${activeCamId ? `/stream/${activeCamId}` : ''}" class="feed-img">
+                <img id="main-feed" src="${isWebcam ? '/stream/webcam' : (activeCamId ? `/stream/${activeCamId}` : '')}" class="feed-img" onerror="this.style.display='none'">
+                <div id="webcam-error" style="${isWebcam ? 'display:none;' : 'display:none;'}position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text-secondary);background:rgba(0,0,0,0.9);">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    <div style="font-weight:600;font-size:14px">Webcam Not Available</div>
+                    <div style="font-size:12px;opacity:0.6">Make sure no other app is using the webcam</div>
+                </div>
                 <div class="feed-controls" id="feed-controls">
                     <div class="feed-info">
-                        <span class="status-dot live"></span>
-                        <span class="feed-name" id="feed-name">${firstCam?.name || 'Select Camera'}</span>
+                        <span class="status-dot live" id="feed-dot"></span>
+                        <span class="feed-name" id="feed-name">${isWebcam ? 'Webcam' : (firstCam?.name || 'No Camera')}</span>
                         <span class="camera-tag" id="feed-fps">-- FPS</span>
-                        <span class="camera-tag" style="background:var(--color-blue-glow);color:#fff">AI ON</span>
+                        <span class="camera-tag" id="feed-source-tag" style="background:${isWebcam ? 'rgba(168,85,247,0.3)' : 'var(--color-blue-glow)'};color:#fff">${isWebcam ? 'WEBCAM' : 'CCTV'}</span>
+                        <span class="camera-tag" style="background:var(--color-green-glow);color:#fff">AI ON</span>
                     </div>
                     <button class="btn btn-primary" id="fs-btn">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
@@ -73,37 +85,92 @@ export default function render(container) {
         </div>
     `;
 
+    // ─── Feed Elements ────────────────────────────
+    const mainFeed = document.getElementById('main-feed');
+    const feedName = document.getElementById('feed-name');
+    const feedSourceTag = document.getElementById('feed-source-tag');
+    const webcamBtn = document.getElementById('webcam-btn');
+    const webcamError = document.getElementById('webcam-error');
+
     // ─── Camera Switching ──────────────────────────
-    function switchCamera(camId) {
-        if (camId === activeCamId) return;
+    function switchToCctv(camId) {
+        isWebcam = false;
         activeCamId = camId;
 
         // Update buttons
-        container.querySelectorAll('.cam-btn').forEach(b => {
+        container.querySelectorAll('.cam-btn:not(#webcam-btn)').forEach(b => {
             b.classList.toggle('active', b.dataset.cam === camId);
+            if (b.dataset.cam === camId) {
+                b.style.background = '';
+                b.style.color = '';
+                b.style.borderColor = '';
+            } else {
+                b.style.background = '';
+                b.style.color = '';
+                b.style.borderColor = '';
+            }
         });
+        webcamBtn.classList.remove('active');
+        webcamBtn.style.background = '';
+        webcamBtn.style.color = '';
+        webcamBtn.style.borderColor = '';
 
-        // Destroy old img, create new one (MJPEG can't switch src on active stream)
-        const feedContainer = document.getElementById('feed-container');
-        const oldImg = document.getElementById('main-feed');
-        if (oldImg) oldImg.remove();
-
-        const newImg = document.createElement('img');
-        newImg.id = 'main-feed';
-        newImg.className = 'feed-img';
-        newImg.src = `/stream/${camId}`;
-        newImg.onerror = () => { newImg.style.opacity = '0'; };
-        newImg.onload = () => { newImg.style.opacity = '1'; };
-        feedContainer.insertBefore(newImg, feedContainer.firstChild);
+        // Switch feed
+        mainFeed.style.display = '';
+        webcamError.style.display = 'none';
+        mainFeed.src = `/stream/${camId}`;
 
         // Update info
         const cam = state.cameras.find(c => c.id === camId);
-        document.getElementById('feed-name').textContent = cam?.name || camId;
+        feedName.textContent = cam?.name || camId;
+        feedSourceTag.textContent = 'CCTV';
+        feedSourceTag.style.background = 'var(--color-blue-glow)';
     }
 
-    container.querySelectorAll('.cam-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchCamera(btn.dataset.cam));
+    function switchToWebcam() {
+        isWebcam = true;
+        activeCamId = null;
+
+        // Update buttons
+        container.querySelectorAll('.cam-btn:not(#webcam-btn)').forEach(b => {
+            b.classList.remove('active');
+            b.style.background = '';
+            b.style.color = '';
+            b.style.borderColor = '';
+        });
+        webcamBtn.classList.add('active');
+        webcamBtn.style.background = 'rgba(168,85,247,0.15)';
+        webcamBtn.style.color = '#a855f7';
+        webcamBtn.style.borderColor = '#a855f7';
+
+        // Switch feed
+        mainFeed.style.display = '';
+        webcamError.style.display = 'none';
+        mainFeed.src = '/stream/webcam';
+
+        // Update info
+        feedName.textContent = 'Webcam';
+        feedSourceTag.textContent = 'WEBCAM';
+        feedSourceTag.style.background = 'rgba(168,85,247,0.3)';
+    }
+
+    // ─── Handle Webcam Stream Error ───────────────
+    mainFeed.addEventListener('error', function() {
+        if (isWebcam) {
+            mainFeed.style.display = 'none';
+            webcamError.style.display = 'flex';
+        }
     });
+
+    // ─── Bind CCTV Camera Buttons ─────────────────
+    container.querySelectorAll('.cam-btn:not(#webcam-btn)').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.cam) switchToCctv(btn.dataset.cam);
+        });
+    });
+
+    // ─── Bind Webcam Button ───────────────────────
+    webcamBtn.addEventListener('click', switchToWebcam);
 
     // ─── Fullscreen (Browser Fullscreen API) ───────
     document.getElementById('fs-btn').addEventListener('click', () => {
@@ -112,47 +179,55 @@ export default function render(container) {
             el.requestFullscreen();
         } else if (el.webkitRequestFullscreen) {
             el.webkitRequestFullscreen();
-        } else if (el.msRequestFullscreen) {
-            el.msRequestFullscreen();
         }
     });
 
-    // ─── Stats Update ──────────────────────────────
-    const updateView = (currentState) => {
-        if (currentState.stats) {
-            document.getElementById('dash-stat-online').textContent = `${currentState.stats.cameras_online || 0} / ${currentState.cameras.length}`;
-            if (currentState.stats.detection) {
-                document.getElementById('dash-stat-helmet').textContent = currentState.stats.detection.helmet_count || 0;
-                document.getElementById('dash-stat-violations').textContent = currentState.stats.detection.violations || 0;
+    // ─── Stats Update ─────────────────────────────
+    function updateStats() {
+        if (!state.status || !state.status.cameras) return;
+
+        // Online count
+        const onlineCount = Object.values(state.status.cameras).filter(c => c.connected).length;
+        const onlineEl = document.getElementById('dash-stat-online');
+        if (onlineEl) onlineEl.textContent = onlineCount + ' / ' + state.cameras.length;
+
+        // Per-camera FPS in selector
+        state.cameras.forEach(cam => {
+            const fpsEl = document.getElementById(`sel-fps-${cam.id}`);
+            if (fpsEl) {
+                const camStatus = state.status.cameras[cam.id] || {};
+                fpsEl.textContent = (camStatus.fps || 0) + ' fps';
             }
-            if (currentState.stats.violations) {
-                document.getElementById('dash-stat-today').textContent = currentState.stats.violations.total_today || 0;
+            const dotEl = document.getElementById(`sel-dot-${cam.id}`);
+            if (dotEl) {
+                const camStatus = state.status.cameras[cam.id] || {};
+                dotEl.className = `status-dot ${camStatus.connected ? 'live' : 'offline'}`;
             }
+        });
+
+        // Feed FPS (only for CCTV)
+        if (!isWebcam && activeCamId) {
+            const camStatus = state.status.cameras[activeCamId] || {};
+            const feedFps = document.getElementById('feed-fps');
+            if (feedFps) feedFps.textContent = (camStatus.fps || 0) + ' FPS';
+        } else if (isWebcam) {
+            const feedFps = document.getElementById('feed-fps');
+            if (feedFps) feedFps.textContent = 'LIVE';
         }
 
-        // Update selector bar dots and FPS
-        if (currentState.status && currentState.status.cameras) {
-            currentState.cameras.forEach(cam => {
-                const s = currentState.status.cameras[cam.id];
-                if (!s) return;
-                const dot = document.getElementById(`sel-dot-${cam.id}`);
-                const fps = document.getElementById(`sel-fps-${cam.id}`);
-                if (dot) {
-                    dot.className = `status-dot ${s.connected ? 'live' : 'offline'}`;
-                }
-                if (fps) {
-                    fps.textContent = s.connected ? `${s.fps}` : 'OFF';
-                }
-            });
+        // Detections count
+        const helmetEl = document.getElementById('dash-stat-helmet');
+        if (helmetEl) helmetEl.textContent = state.stats.total_detections || 0;
 
-            // Update feed FPS for active camera
-            const activeStatus = currentState.status.cameras[activeCamId];
-            if (activeStatus) {
-                document.getElementById('feed-fps').textContent = activeStatus.connected ? `${activeStatus.fps} FPS` : 'OFFLINE';
-            }
-        }
-    };
+        // Violations count
+        const violationEl = document.getElementById('dash-stat-violations');
+        if (violationEl) violationEl.textContent = state.stats.total_violations || 0;
 
-    updateView(state);
-    return subscribe(updateView);
+        // Today count
+        const todayEl = document.getElementById('dash-stat-today');
+        if (todayEl) todayEl.textContent = state.stats.today_violations || 0;
+    }
+
+    updateStats();
+    return subscribe(updateStats);
 }

@@ -46,7 +46,8 @@ async def lifespan(app: FastAPI):
     # Only ONE MJPEG stream is served at a time to the browser
     for cam_conf in cam_list:
         camera_configs[cam_conf.id] = cam_conf
-        rtsp_url = build_rtsp_url(cam_conf, subtype=1)
+        # Use Config.RTSP_SUBTYPE instead of hardcoded 1
+        rtsp_url = build_rtsp_url(cam_conf, subtype=Config.RTSP_SUBTYPE)
         cam = ThreadedCamera(
             camera_id=cam_conf.id,
             camera_name=cam_conf.name,
@@ -55,10 +56,11 @@ async def lifespan(app: FastAPI):
         cameras[cam_conf.id] = cam
         detection_enabled[cam_conf.id] = True
 
+        stream_label = "main" if Config.RTSP_SUBTYPE == 0 else "sub"
         if cam.start():
-            print(f"  [OK] {cam_conf.name} (sub) - Channel {cam_conf.channel}")
+            print(f"  [OK] {cam_conf.name} ({stream_label}) - Channel {cam_conf.channel}")
         else:
-            print(f"  [--] {cam_conf.name} (sub) - Failed (will auto-retry)")
+            print(f"  [--] {cam_conf.name} ({stream_label}) - Failed (will auto-retry)")
 
     print("  [..] View: Single camera selector + Browser Fullscreen API")
 
@@ -71,6 +73,7 @@ async def lifespan(app: FastAPI):
     print("=" * 55)
     print(f"   Dashboard: http://localhost:{Config.SERVER_PORT}")
     print(f"   Cameras: {len(cameras)} | Stream: /stream/<id>")
+    print(f"   Webcam:  /stream/webcam")
     print("=" * 55 + "\n")
 
     yield
@@ -161,6 +164,71 @@ async def camera_list():
         }
         result.append(info)
     return {"cameras": result}
+
+
+# ─── Stream Routes ──────────────────────────────────────────────
+# IMPORTANT: /stream/webcam MUST be before /stream/{camera_id}
+# Otherwise FastAPI matches "webcam" as a camera_id parameter
+
+@app.get("/stream/webcam")
+async def webcam_stream():
+    """MJPEG video stream from the laptop's built-in webcam.
+    Uses the same YOLO detection pipeline as CCTV cameras."""
+    det = get_detector()
+    interval = 1.0 / Config.STREAM_FPS
+
+    def generate():
+        # Open the local webcam (index 0 = default built-in)
+        cap = cv2.VideoCapture(0)
+
+        if not cap.isOpened():
+            print("[Webcam] Failed to open webcam")
+            no_sig = create_no_signal_frame("Webcam")
+            _, jpeg = cv2.imencode(".jpg", no_sig, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+            return
+
+        # Set webcam resolution
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(f"[Webcam] Connected! {actual_w}x{actual_h}")
+
+        try:
+            while True:
+                frame_start = time.time()
+
+                ret, frame = cap.read()
+                if not ret:
+                    time.sleep(0.1)
+                    continue
+
+                # Flip horizontally so it feels like a mirror (natural for webcam)
+                frame = cv2.flip(frame, 1)
+
+                # Run detection using the same pipeline
+                annotated, _ = det.detect("webcam", frame)
+
+                _, jpeg = cv2.imencode(".jpg", annotated, [
+                    cv2.IMWRITE_JPEG_QUALITY, Config.JPEG_QUALITY
+                ])
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n"
+
+                elapsed = time.time() - frame_start
+                sleep_time = interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+        finally:
+            cap.release()
+            print("[Webcam] Released")
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
 
 
 @app.get("/stream/{camera_id}")
