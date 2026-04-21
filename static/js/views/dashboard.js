@@ -217,15 +217,15 @@ export default function render(container) {
 
         // Detections count
         const helmetEl = document.getElementById('dash-stat-helmet');
-        if (helmetEl) helmetEl.textContent = state.stats.total_detections || 0;
+        if (helmetEl) helmetEl.textContent = (state.stats.detection && state.stats.detection.total_detections) || 0;
 
-        // Violations count
+        // Violations count (last hour)
         const violationEl = document.getElementById('dash-stat-violations');
-        if (violationEl) violationEl.textContent = state.stats.total_violations || 0;
+        if (violationEl) violationEl.textContent = (state.stats.violations && state.stats.violations.last_hour) || 0;
 
         // Today count
         const todayEl = document.getElementById('dash-stat-today');
-        if (todayEl) todayEl.textContent = state.stats.today_violations || 0;
+        if (todayEl) todayEl.textContent = (state.stats.violations && state.stats.violations.total_today) || 0;
     }
 
     updateStats();

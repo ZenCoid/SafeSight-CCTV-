@@ -77,6 +77,16 @@ class Config:
     # RTSP
     RTSP_SUBTYPE = int(os.getenv("RTSP_SUBTYPE", "0"))
 
+    # Gmail Alerts
+    SMTP_ENABLED = os.getenv("SMTP_ENABLED", "false").lower() == "true"
+    SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_EMAIL = os.getenv("SMTP_EMAIL", "")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+    SMTP_TO = os.getenv("SMTP_TO", "")
+    # Multiple recipients: comma-separated in SMTP_TO, or use SMTP_TO="a@mail.com,b@mail.com"
+    SMTP_TO_LIST = [addr.strip() for addr in os.getenv("SMTP_TO", "").split(",") if addr.strip()]
+
     # Database
     DB_PATH = "violations.db"
 

@@ -15,7 +15,7 @@ export default function render(container) {
                         <th>Camera</th>
                         <th>Type</th>
                         <th>Confidence</th>
-                        <th>Action</th>
+                        <th>Snapshot</th>
                     </tr>
                 </thead>
                 <tbody id="violations-tbody">
@@ -38,6 +38,7 @@ export default function render(container) {
             const badgeBg = isVi ? 'var(--color-red-glow)' : 'var(--color-green-glow)';
             const badgeColor = isVi ? 'var(--color-red)' : 'var(--color-green)';
             const confPercent = Math.round(v.confidence * 100);
+            const snapshotUrl = v.snapshot_url || null;
 
             return `
                 <tr>
@@ -57,8 +58,14 @@ export default function render(container) {
                         </div>
                     </td>
                     <td>
-                        ${v.snapshot_url 
-                            ? '<a href="' + v.snapshot_url + '" target="_blank" class="btn" style="padding:4px 8px;font-size:11px">View Image</a>' 
+                        ${snapshotUrl
+                            ? `<a href="${snapshotUrl}" target="_blank" title="Click to view full size">
+                                <img src="${snapshotUrl}" alt="Violation snapshot" 
+                                     style="width:80px;height:45px;object-fit:cover;border-radius:4px;border:1px solid var(--bg-border);cursor:pointer;transition:transform 0.2s,border-color 0.2s"
+                                     onmouseover="this.style.transform='scale(1.1)';this.style.borderColor='var(--color-teal)'"
+                                     onmouseout="this.style.transform='scale(1)';this.style.borderColor='var(--bg-border)'"
+                                     onerror="this.style.display='none';this.parentElement.innerHTML='<span class=\\'text-small\\'>Failed</span>'">
+                               </a>`
                             : '<span class="text-small">No image</span>'}
                     </td>
                 </tr>

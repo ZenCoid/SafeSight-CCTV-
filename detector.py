@@ -12,8 +12,10 @@ Enhanced for CCTV footage:
 import cv2
 import numpy as np
 import time
+import os
 from pathlib import Path
 from collections import deque
+from datetime import datetime
 
 try:
     from ultralytics import YOLO
@@ -22,6 +24,7 @@ except ImportError:
 
 from database import ViolationDB
 from config import Config
+from email_sender import send_violation_alert
 
 
 class YOLODetector:
@@ -198,13 +201,41 @@ class YOLODetector:
                     time_since = now - last_logged
 
                     if time_since >= Config.VIOLATION_COOLDOWN:
+                        # ─── Save Snapshot ─────────────────────────
+                        snapshot_path = self._save_snapshot(camera_id, frame, detections)
+
+                        # ─── Log to Database ────────────────────────
+                        max_conf = max(d['confidence'] for d in detections if d['class_id'] == 1)
+
+                        # Get camera name from main.py camera_configs if available
+                        cam_name = str(camera_id)
+                        cam_ip = ''
+                        try:
+                            from main import camera_configs
+                            if camera_id in camera_configs:
+                                cam_name = camera_configs[camera_id].name
+                                cam_ip = camera_configs[camera_id].ip
+                        except ImportError:
+                            pass
+
                         self.db.log_violation(
                             camera_id=str(camera_id),
+                            camera_name=cam_name,
+                            camera_ip=cam_ip,
                             detection_type='no_helmet',
-                            confidence=max(d['confidence'] for d in detections if d['class_id'] == 1)
+                            confidence=max_conf,
+                            snapshot_path=snapshot_path,
                         )
                         self.violation_cooldowns[camera_id] = now
-                        print(f"[VIOLATION] {camera_id} - No helmet detected (after {counter} frames)")
+                        print(f"[VIOLATION] {camera_id} - No helmet detected (after {counter} frames, conf={max_conf:.0%})")
+
+                        # ─── Send Email Alert ───────────────────────
+                        send_violation_alert(
+                            camera_name=cam_name,
+                            detection_type='no_helmet',
+                            confidence=max_conf,
+                            snapshot_path=snapshot_path,
+                        )
                     else:
                         pass
             else:
@@ -293,6 +324,53 @@ class YOLODetector:
             cv2.putText(annotated, label, (x1 + 3, label_y - 2), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
         return annotated
+
+    def _save_snapshot(self, camera_id: str, frame, detections: list) -> str:
+        """Save an annotated snapshot of the frame with detection boxes.
+        Returns the file path, or None if saving fails."""
+        try:
+            os.makedirs(Config.SNAPSHOT_DIR, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"{camera_id}_{timestamp}.jpg"
+            filepath = os.path.join(Config.SNAPSHOT_DIR, filename)
+
+            # Draw detection boxes on a copy of the frame
+            annotated = frame.copy()
+            for det in detections:
+                x1, y1, x2, y2 = det['bbox']
+                cls_id = det['class_id']
+                cls_name = det['class_name']
+                conf = det['confidence']
+                color = self.class_colors.get(cls_id, (255, 255, 255))
+
+                h, w = annotated.shape[:2]
+                x1 = max(0, min(x1, w - 1))
+                y1 = max(0, min(y1, h - 1))
+                x2 = max(0, min(x2, w - 1))
+                y2 = max(0, min(y2, h - 1))
+
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
+
+                label = f"{cls_name} {conf:.0%}"
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.55
+                thickness = 2
+                (text_w, text_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
+                label_y = max(y1 - 6, text_h + 4)
+                cv2.rectangle(annotated, (x1, label_y - text_h - 4), (x1 + text_w + 6, label_y + 2), color, -1)
+                cv2.putText(annotated, label, (x1 + 3, label_y - 2), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+            # Add timestamp overlay
+            ts_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cv2.putText(annotated, f"SafeSight AI | {camera_id} | {ts_text}",
+                       (10, annotated.shape[0] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+            cv2.imwrite(filepath, annotated, [cv2.IMWRITE_JPEG_QUALITY, Config.SNAPSHOT_QUALITY])
+            print(f"[SNAPSHOT] Saved: {filepath}")
+            return filepath
+        except Exception as e:
+            print(f"[SNAPSHOT] Failed to save: {e}")
+            return None
 
     def get_stats(self):
         """Get detection statistics for dashboard."""

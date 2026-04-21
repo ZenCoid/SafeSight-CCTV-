@@ -16,11 +16,13 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 
 from config import Config, CameraConfig
 from camera import ThreadedCamera
 from detector import YOLODetector
 from database import ViolationDB
+from email_sender import send_violation_alert
 
 # Force TCP for RTSP — MUST be before any cv2.VideoCapture()
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
@@ -99,6 +101,11 @@ app.add_middleware(
 
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Serve violation snapshots
+snapshot_dir = Path(__file__).parent / Config.SNAPSHOT_DIR
+snapshot_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/snapshots", StaticFiles(directory=str(snapshot_dir)), name="snapshots")
 
 # ─── Global Instances ──────────────────────────────────────────
 
@@ -307,6 +314,18 @@ async def get_violations(limit: int = 50, offset: int = 0, hours: int = 24, came
     return {"violations": violations, "count": len(violations)}
 
 
+@app.post("/api/violations/send_test")
+async def send_test_alert():
+    """Send a test violation email (no snapshot)."""
+    success = send_violation_alert(
+        camera_name="Test Camera",
+        detection_type="no_helmet",
+        confidence=0.85,
+        snapshot_path=None,
+    )
+    return {"success": success}
+
+
 @app.post("/api/detection/toggle/{camera_id}")
 async def toggle_detection(camera_id: str):
     if camera_id not in cameras:
@@ -355,6 +374,15 @@ class ConnectionManager:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
+
+    def broadcast_sync(self, message: dict):
+        """Non-async broadcast from sync code (schedules on event loop)."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(self.broadcast(message))
+        except RuntimeError:
+            pass
 
 
 ws_manager = ConnectionManager()
