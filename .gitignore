@@ -1,11 +1,50 @@
-__pycache__ 
-*.pyc 
-models/ 
-snapshots/ 
-cameras.json 
-.env 
-violations.db 
-!models/best.pt 
-venv/ 
-__pycache__/ 
-*.pyc 
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual Environment ────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Environment Variables ──────────────────────────────────────
+.env
+.env.local
+
+# ── Model Weights (large files) ────────────────────────────────
+weights/*.pt
+weights/*.onnx
+weights/*.engine
+!weights/.gitkeep
+
+# ── Snapshots (generated images) ───────────────────────────────
+violations/*.jpg
+violations/*.png
+
+# ── Database ───────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Camera Config (contains passwords!) ───────────────────────
+cameras.json
+
+# ── IDE ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ── Testing ────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Logs ───────────────────────────────────────────────────────
+*.log

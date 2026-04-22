@@ -1,0 +1,14 @@
+{
+  "cameras": [
+    {
+      "id": "cam1",
+      "name": "Camera 1",
+      "ip": "192.168.100.18",
+      "port": 554,
+      "username": "admin",
+      "password": "CHANGE_ME",
+      "channel": 1,
+      "subtype": 1
+    }
+  ]
+}
